@@ -16,8 +16,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.const import UnitOfTemperature
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -98,7 +97,7 @@ def parents_to_dict(parents: Any) -> dict:
         return out
     return {}
 
-@dataclass
+@dataclass(frozen=True, kw_only=True)
 class MyNeoSensorEntityDescription(SensorEntityDescription):
     """Describe MyNeomitis sensor entity."""
 
@@ -127,8 +126,6 @@ class DevicesEnergySensor(SensorEntity):
         description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the devices energy sensor."""
-        # If no description provided (tests may construct directly), build a
-        # minimal description to keep attributes consistent
         if description is None:
             description = MyNeoSensorEntityDescription(
                 key=f"energy_{device.get('_id')}", state_key="consumption"
@@ -178,6 +175,7 @@ class DevicesEnergySensor(SensorEntity):
                 self._device_id,
             )
 
+    @callback
     def handle_ws_update(self, new_state: dict[str, Any]) -> None:
         """Handle websocket updates for the energy sensor."""
         available = process_connection_update(new_state)
@@ -196,7 +194,8 @@ class DevicesEnergySensor(SensorEntity):
 
         if "consumption" in new_state:
             self._device.setdefault("state", {})["consumption"] = new_state["consumption"]
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float | None:
@@ -224,9 +223,9 @@ class DevicesEnergySensor(SensorEntity):
 
         if not state:
             return
-
         self._device["state"] = state["state"]
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 class NTCTemperatureSensor(SensorEntity):
@@ -297,6 +296,7 @@ class NTCTemperatureSensor(SensorEntity):
                 self._device_id,
             )
 
+    @callback
     def handle_ws_update(self, new_state: dict[str, Any]) -> None:
         """Handle websocket updates for the NTC sensor."""
         available = process_connection_update(new_state)
@@ -316,7 +316,8 @@ class NTCTemperatureSensor(SensorEntity):
         key = f"ntc{self._ntc_index}Temp"
         if key in new_state:
             self._device.setdefault("state", {})[key] = new_state[key]
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float | None:
@@ -345,7 +346,8 @@ class NTCTemperatureSensor(SensorEntity):
         if not state:
             return
         self._device["state"] = state["state"]
-        self.async_write_ha_state()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 async def async_setup_entry(
@@ -422,23 +424,3 @@ async def async_setup_entry(
             config_entry,
             options=options,
         )
-
-    async def add_new_entity(device: dict) -> None:
-        if device["_id"] in added_ids:
-            return
-        new_entities = _create_entities(device)
-        if new_entities:
-            _LOGGER.info(
-                "Adding new sensor entity(ies) for %s", device.get("name")
-            )
-            async_add_entities(new_entities)
-
-    async def remove_entity(device_id: str) -> None:
-        uid = f"myneo_{device_id}"
-        entities = entities_by_id.get(uid)
-        if entities:
-            _LOGGER.info("Removing sensor entity(ies): %s", uid)
-            for entity in entities:
-                await entity.async_remove()
-            added_ids.discard(device_id)
-            entities_by_id.pop(uid, None)
