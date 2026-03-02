@@ -2,13 +2,13 @@
 
 from unittest.mock import AsyncMock, Mock
 
-import pytest
-
+from homeassistant.components.myneomitis import (
+    MyNeomitisRuntimeData,
+    sensor as sensor_mod,
+)
 from homeassistant.core import HomeAssistant
 
 from tests.common import MockConfigEntry
-from homeassistant.components.myneomitis import MyNeomitisRuntimeData, sensor as sensor_mod
-
 
 SAMPLE_DEVICE = {
     "_id": "dev1",
@@ -20,15 +20,17 @@ SAMPLE_DEVICE = {
 
 
 async def test_setup_with_discovery_unsubscribe_variants(
-    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_pyaxenco_client: AsyncMock
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_pyaxenco_client: AsyncMock,
 ) -> None:
     """Test that different unsubscribe return types are handled."""
 
     mock_pyaxenco_client.get_devices.return_value = [SAMPLE_DEVICE]
     variants = [
-        (Mock(return_value=lambda: None), "callable"),
-        (Mock(return_value=Mock(unsubscribe=lambda: None)), "unsubscribe_obj"),
-        (Mock(return_value=Mock(close=lambda: None)), "close_obj"),
+        (Mock(return_value=Mock()), "callable"),
+        (Mock(return_value=Mock(unsubscribe=Mock())), "unsubscribe_obj"),
+        (Mock(return_value=Mock(close=Mock())), "close_obj"),
         (Mock(return_value=None), "none"),
         (Mock(return_value=123), "unsupported"),
     ]
@@ -112,7 +114,10 @@ async def test_helpers_and_edge_cases() -> None:
     assert (sensor.ctn0, sensor.ctn1, sensor.ctn2) == (7, 7, 7)
 
     parents_list = [{"type": "gateway", "id": "gw-1"}, {"type": "other", "id": "o1"}]
-    assert sensor_mod.parents_to_dict(parents_list) == {"gateway": "gw-1", "other": "o1"}
+    assert sensor_mod.parents_to_dict(parents_list) == {
+        "gateway": "gw-1",
+        "other": "o1",
+    }
 
     resp_map = {"a": {"rfid": "r1", "state": {}}, "b": {"rfid": "r2"}}
     assert sensor_mod.get_device_by_rfid(resp_map, "r2")["rfid"] == "r2"
@@ -127,21 +132,23 @@ async def test_helpers_and_edge_cases() -> None:
     assert sensor.native_value == 0.0
 
 
-async def test_devices_energy_async_added_and_update_variants(hass: HomeAssistant) -> None:
+async def test_devices_energy_async_added_and_update_variants(
+    hass: HomeAssistant,
+) -> None:
     """Test async_added_to_hass handles different register_listener returns and update error handling."""
     api = AsyncMock()
-    api.register_listener = Mock(return_value=lambda: None)
+    api.register_listener = Mock(return_value=Mock())
     dev = {**SAMPLE_DEVICE}
     entity = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
     entity.hass = hass
     await entity.async_added_to_hass()
 
-    api.register_listener = Mock(return_value=Mock(unsubscribe=lambda: None))
+    api.register_listener = Mock(return_value=Mock(unsubscribe=Mock()))
     entity2 = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
     entity2.hass = hass
     await entity2.async_added_to_hass()
 
-    api.register_listener = Mock(return_value=Mock(close=lambda: None))
+    api.register_listener = Mock(return_value=Mock(close=Mock()))
     entity3 = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
     entity3.hass = hass
     await entity3.async_added_to_hass()
@@ -163,8 +170,17 @@ async def test_devices_energy_async_added_and_update_variants(hass: HomeAssistan
 async def test_ntc_sensor_async_update_and_ws() -> None:
     """Test NTC sensor update error handling and websocket availability."""
     api = AsyncMock()
-    api.get_sub_device_state = AsyncMock(return_value=[{"rfid": "r1", "state": {"ntc0Temp": 12.3}}])
-    dev = {"_id": "s1", "name": "Sub", "model": "NTD", "state": {}, "parents": {"gateway": "gw"}, "rfid": "r1"}
+    api.get_sub_device_state = AsyncMock(
+        return_value=[{"rfid": "r1", "state": {"ntc0Temp": 12.3}}]
+    )
+    dev = {
+        "_id": "s1",
+        "name": "Sub",
+        "model": "NTD",
+        "state": {},
+        "parents": {"gateway": "gw"},
+        "rfid": "r1",
+    }
     ent = sensor_mod.NTCTemperatureSensor(api, dev, 0, 0, None)
     await ent.async_update()
     assert ent.native_value == 12.3
@@ -199,7 +215,9 @@ async def test_native_value_none_and_ntc_low_values() -> None:
     assert ntc.native_value is None
 
 
-async def test_async_added_unsupported_and_missing_register_listener(hass: HomeAssistant) -> None:
+async def test_async_added_unsupported_and_missing_register_listener(
+    hass: HomeAssistant,
+) -> None:
     """Ensure async_added_to_hass handles unsupported unsubscribe types and missing register_listener."""
     api = AsyncMock()
     api.register_listener = Mock(return_value=123)
@@ -217,7 +235,9 @@ async def test_async_added_unsupported_and_missing_register_listener(hass: HomeA
     await ent2.async_added_to_hass()
 
 
-async def test_async_setup_entry_creates_entities_and_updates_options(hass: HomeAssistant) -> None:
+async def test_async_setup_entry_creates_entities_and_updates_options(
+    hass: HomeAssistant,
+) -> None:
     """Test that async_setup_entry adds sensors and updates options for offsets."""
     api = AsyncMock()
     device = {

@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 from typing import Any
-import aiohttp
 
+import aiohttp
 from pyaxencoapi import PyAxencoAPI
 
-from dataclasses import dataclass
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
-    SensorStateClass,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.const import UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import MyNeomitisConfigEntry
+from . import MyNeomitisConfigEntry, process_connection_update
 from .const import DOMAIN
+
 
 class CtnType:
     """Simple replacement for CTN type labeling."""
@@ -29,10 +30,7 @@ class CtnType:
     @staticmethod
     def get_label(ctn_type: int) -> str:
         """Return a short label for a CTN type."""
-        try:
-            return str(ctn_type)
-        except Exception:
-            return ""
+        return str(ctn_type)
 
 
 @dataclass
@@ -44,7 +42,7 @@ class Sensors:
     ctn2: int | None = None
 
     @staticmethod
-    def from_number(value: int) -> "Sensors":
+    def from_number(value: int) -> Sensors:
         """Construct Sensors from a numeric code.
 
         This implementation is permissive: it returns the value in each
@@ -97,6 +95,7 @@ def parents_to_dict(parents: Any) -> dict:
         return out
     return {}
 
+
 @dataclass(frozen=True, kw_only=True)
 class MyNeoSensorEntityDescription(SensorEntityDescription):
     """Describe MyNeomitis sensor entity."""
@@ -104,7 +103,6 @@ class MyNeoSensorEntityDescription(SensorEntityDescription):
     state_key: str | None = None
     ntc_index: int | None = None
 
-from . import process_connection_update
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,6 +113,8 @@ class DevicesEnergySensor(SensorEntity):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = "kWh"
+    _attr_has_entity_name = True
+    _attr_should_poll = True
 
     entity_description: MyNeoSensorEntityDescription
 
@@ -126,26 +126,26 @@ class DevicesEnergySensor(SensorEntity):
         description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the devices energy sensor."""
+        device_id = device.get("_id")
+        if not device_id:
+            raise ValueError("Device is missing required _id")
+        self._device_id: str = device_id
         if description is None:
             description = MyNeoSensorEntityDescription(
-                key=f"energy_{device.get('_id')}", state_key="consumption"
+                key=f"energy_{device_id}", state_key="consumption"
             )
         self.entity_description = description
         self._api = api
         self._device = device
-        self._attr_name = f"MyNeo {device['name']} Energy"
-        self._attr_unique_id = f"myneo_{device['_id']}_energy"
+        self._attr_unique_id = f"myneo_{device_id}_energy"
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, device["_id"])},
-            name=device.get("name") or device["_id"],
+            identifiers={(DOMAIN, device_id)},
+            name=device.get("name") or device_id,
             manufacturer="Axenco",
             model=device.get("model", ""),
         )
-        self._attr_should_poll = True
         self._initial_consumption = base_offset
         self._unavailable_logged: bool = False
-        self._device_id = device.get("_id")
-        self._attr_has_entity_name = True
 
     async def async_added_to_hass(self) -> None:
         """Register websocket listener for this sensor."""
@@ -193,7 +193,9 @@ class DevicesEnergySensor(SensorEntity):
             return
 
         if "consumption" in new_state:
-            self._device.setdefault("state", {})["consumption"] = new_state["consumption"]
+            self._device.setdefault("state", {})["consumption"] = new_state[
+                "consumption"
+            ]
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -233,6 +235,8 @@ class NTCTemperatureSensor(SensorEntity):
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_has_entity_name = True
+    _attr_should_poll = True
 
     entity_description: MyNeoSensorEntityDescription
 
@@ -241,10 +245,22 @@ class NTCTemperatureSensor(SensorEntity):
         api: PyAxencoAPI,
         device: dict[str, Any],
         ntc_index: int,
-        ctn_type: int,
-        description: MyNeoSensorEntityDescription,
+        ctn_type: int | None,
+        description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the NTC temperature sensor."""
+        device_id = device.get("_id")
+        if not device_id:
+            raise ValueError("Device is missing required _id")
+        self._device_id: str = device_id
+        if description is None:
+            description = MyNeoSensorEntityDescription(
+                key=f"ntc_{device_id}_{ntc_index}",
+                state_key=f"ntc{ntc_index}Temp",
+                ntc_index=ntc_index,
+                device_class=SensorDeviceClass.TEMPERATURE,
+                native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            )
         self.entity_description = description
         self._api = api
         self._device = device
@@ -253,20 +269,14 @@ class NTCTemperatureSensor(SensorEntity):
         )
         self._ntc_index = ntc_index
         self._ctn_type = ctn_type
-        self._attr_name = (
-            f"MyNeo {device['name']} {CtnType.get_label(ctn_type)} Temp {ntc_index}"
-        )
-        self._attr_unique_id = f"myneo_{device['_id']}_ntc{ntc_index}"
+        self._attr_unique_id = f"myneo_{device_id}_ntc{ntc_index}"
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, device["_id"])},
-            name=device.get("name") or device["_id"],
+            identifiers={(DOMAIN, device_id)},
+            name=device.get("name") or device_id,
             manufacturer="Axenco",
             model=device.get("model", ""),
         )
-        self._attr_should_poll = True
         self._unavailable_logged: bool = False
-        self._device_id = device.get("_id")
-        self._attr_has_entity_name = True
 
     async def async_added_to_hass(self) -> None:
         """Register websocket listener for this sensor."""
