@@ -126,23 +126,20 @@ class DevicesEnergySensor(SensorEntity):
         description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the devices energy sensor."""
-        device_id = device.get("_id")
-        if not device_id:
-            raise ValueError("Device is missing required _id")
-        self._device_id: str = device_id
+        self._device_id: str = device["_id"]
         if description is None:
             description = MyNeoSensorEntityDescription(
-                key=f"energy_{device_id}", state_key="consumption"
+                key=f"energy_{self._device_id}", state_key="consumption"
             )
         self.entity_description = description
         self._api = api
         self._device = device
-        self._attr_unique_id = f"myneo_{device_id}_energy"
+        self._attr_unique_id = f"myneo_{self._device_id}_energy"
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=device.get("name") or device_id,
+            identifiers={(DOMAIN, self._device_id)},
+            name=device.get("name") or self._device_id,
             manufacturer="Axenco",
-            model=device.get("model", ""),
+            model=device.get("model"),
         )
         self._initial_consumption = base_offset
         self._unavailable_logged: bool = False
@@ -150,30 +147,10 @@ class DevicesEnergySensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Register websocket listener for this sensor."""
         await super().async_added_to_hass()
-        register_listener = getattr(self._api, "register_listener", None)
-        if not callable(register_listener):
-            _LOGGER.debug(
-                "API has no callable register_listener, skipping ws listener for %s",
-                self._device_id,
-            )
-            return
-
-        unsubscribe = register_listener(self._device_id, self.handle_ws_update)
-
-        if callable(unsubscribe):
+        if unsubscribe := self._api.register_listener(
+            self._device_id, self.handle_ws_update
+        ):
             self.async_on_remove(unsubscribe)
-        elif hasattr(unsubscribe, "unsubscribe"):
-            self.async_on_remove(unsubscribe.unsubscribe)
-        elif hasattr(unsubscribe, "close"):
-            self.async_on_remove(unsubscribe.close)
-        elif unsubscribe is None:
-            pass
-        else:
-            _LOGGER.debug(
-                "register_listener returned unsupported type %s for %s",
-                type(unsubscribe),
-                self._device_id,
-            )
 
     @callback
     def handle_ws_update(self, new_state: dict[str, Any]) -> None:
@@ -249,13 +226,10 @@ class NTCTemperatureSensor(SensorEntity):
         description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the NTC temperature sensor."""
-        device_id = device.get("_id")
-        if not device_id:
-            raise ValueError("Device is missing required _id")
-        self._device_id: str = device_id
+        self._device_id: str = device["_id"]
         if description is None:
             description = MyNeoSensorEntityDescription(
-                key=f"ntc_{device_id}_{ntc_index}",
+                key=f"ntc_{self._device_id}_{ntc_index}",
                 state_key=f"ntc{ntc_index}Temp",
                 ntc_index=ntc_index,
                 device_class=SensorDeviceClass.TEMPERATURE,
@@ -269,42 +243,22 @@ class NTCTemperatureSensor(SensorEntity):
         )
         self._ntc_index = ntc_index
         self._ctn_type = ctn_type
-        self._attr_unique_id = f"myneo_{device_id}_ntc{ntc_index}"
+        self._attr_unique_id = f"myneo_{self._device_id}_ntc{ntc_index}"
         self._attr_device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, device_id)},
-            name=device.get("name") or device_id,
+            identifiers={(DOMAIN, self._device_id)},
+            name=device.get("name") or self._device_id,
             manufacturer="Axenco",
-            model=device.get("model", ""),
+            model=device.get("model"),
         )
         self._unavailable_logged: bool = False
 
     async def async_added_to_hass(self) -> None:
         """Register websocket listener for this sensor."""
         await super().async_added_to_hass()
-        register_listener = getattr(self._api, "register_listener", None)
-        if not callable(register_listener):
-            _LOGGER.debug(
-                "API has no callable register_listener, skipping ws listener for %s",
-                self._device_id,
-            )
-            return
-
-        unsubscribe = register_listener(self._device_id, self.handle_ws_update)
-
-        if callable(unsubscribe):
+        if unsubscribe := self._api.register_listener(
+            self._device_id, self.handle_ws_update
+        ):
             self.async_on_remove(unsubscribe)
-        elif hasattr(unsubscribe, "unsubscribe"):
-            self.async_on_remove(unsubscribe.unsubscribe)
-        elif hasattr(unsubscribe, "close"):
-            self.async_on_remove(unsubscribe.close)
-        elif unsubscribe is None:
-            pass
-        else:
-            _LOGGER.debug(
-                "register_listener returned unsupported type %s for %s",
-                type(unsubscribe),
-                self._device_id,
-            )
 
     @callback
     def handle_ws_update(self, new_state: dict[str, Any]) -> None:

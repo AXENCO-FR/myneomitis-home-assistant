@@ -19,33 +19,30 @@ SAMPLE_DEVICE = {
 }
 
 
-async def test_setup_with_discovery_unsubscribe_variants(
+async def test_async_added_to_hass_register_listener(
     hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_pyaxenco_client: AsyncMock,
 ) -> None:
-    """Test that different unsubscribe return types are handled."""
+    """Test that async_added_to_hass registers the websocket listener."""
+    api = AsyncMock()
+    unsub = Mock()
+    api.register_listener = Mock(return_value=unsub)
+    dev = {**SAMPLE_DEVICE}
+    entity = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
+    entity.hass = hass
+    await entity.async_added_to_hass()
+    api.register_listener.assert_called_once_with("dev1", entity.handle_ws_update)
 
-    mock_pyaxenco_client.get_devices.return_value = [SAMPLE_DEVICE]
-    variants = [
-        (Mock(return_value=Mock()), "callable"),
-        (Mock(return_value=Mock(unsubscribe=Mock())), "unsubscribe_obj"),
-        (Mock(return_value=Mock(close=Mock())), "close_obj"),
-        (Mock(return_value=None), "none"),
-        (Mock(return_value=123), "unsupported"),
-    ]
 
-    for reg_mock, name in variants:
-        mock_pyaxenco_client.register_listener = reg_mock
-        entry = MockConfigEntry(
-            domain="myneomitis",
-            data=mock_config_entry.data,
-            title=f"MyNeomitis ({name})",
-            unique_id=f"{mock_config_entry.unique_id}-{name}",
-        )
-        entry.add_to_hass(hass)
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+async def test_async_added_to_hass_register_listener_none(
+    hass: HomeAssistant,
+) -> None:
+    """Test that async_added_to_hass handles register_listener returning None."""
+    api = AsyncMock()
+    api.register_listener = Mock(return_value=None)
+    dev = {**SAMPLE_DEVICE}
+    entity = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
+    entity.hass = hass
+    await entity.async_added_to_hass()
 
 
 async def test_devices_energy_sensor_update_direct() -> None:
@@ -132,36 +129,13 @@ async def test_helpers_and_edge_cases() -> None:
     assert sensor.native_value == 0.0
 
 
-async def test_devices_energy_async_added_and_update_variants(
+async def test_devices_energy_async_update_error_handling(
     hass: HomeAssistant,
 ) -> None:
-    """Test async_added_to_hass handles different register_listener returns and update error handling."""
-    api = AsyncMock()
-    api.register_listener = Mock(return_value=Mock())
-    dev = {**SAMPLE_DEVICE}
-    entity = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
-    entity.hass = hass
-    await entity.async_added_to_hass()
-
-    api.register_listener = Mock(return_value=Mock(unsubscribe=Mock()))
-    entity2 = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
-    entity2.hass = hass
-    await entity2.async_added_to_hass()
-
-    api.register_listener = Mock(return_value=Mock(close=Mock()))
-    entity3 = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
-    entity3.hass = hass
-    await entity3.async_added_to_hass()
-
-    api2 = AsyncMock()
-    if hasattr(api2, "register_listener"):
-        delattr(api2, "register_listener")
-    entity4 = sensor_mod.DevicesEnergySensor(api2, dev, 0.0)
-    entity4.hass = hass
-    await entity4.async_added_to_hass()
-
+    """Test async_update error handling marks entity unavailable."""
     api_err = AsyncMock()
     api_err.get_device_state.side_effect = TimeoutError
+    dev = {**SAMPLE_DEVICE}
     ent_err = sensor_mod.DevicesEnergySensor(api_err, dev, 0.0)
     await ent_err.async_update()
     assert ent_err._attr_available is False
@@ -213,26 +187,6 @@ async def test_native_value_none_and_ntc_low_values() -> None:
     dev_low = {"_id": "s2", "name": "Low", "model": "NTD", "state": {"ntc0Temp": -60}}
     ntc = sensor_mod.NTCTemperatureSensor(api, dev_low, 0, 0, None)
     assert ntc.native_value is None
-
-
-async def test_async_added_unsupported_and_missing_register_listener(
-    hass: HomeAssistant,
-) -> None:
-    """Ensure async_added_to_hass handles unsupported unsubscribe types and missing register_listener."""
-    api = AsyncMock()
-    api.register_listener = Mock(return_value=123)
-    dev = {**SAMPLE_DEVICE}
-    ent = sensor_mod.DevicesEnergySensor(api, dev, 0.0)
-    ent.hass = hass
-    await ent.async_added_to_hass()
-
-    class BareAPI:
-        pass
-
-    bare = BareAPI()
-    ent2 = sensor_mod.DevicesEnergySensor(bare, dev, 0.0)
-    ent2.hass = hass
-    await ent2.async_added_to_hass()
 
 
 async def test_async_setup_entry_creates_entities_and_updates_options(
