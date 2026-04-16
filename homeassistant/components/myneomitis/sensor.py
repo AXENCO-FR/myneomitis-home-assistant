@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -28,9 +29,13 @@ class CtnType:
     """Simple replacement for CTN type labeling."""
 
     @staticmethod
-    def get_label(ctn_type: int) -> str:
+    def get_label(ctn_type: object | None) -> str:
         """Return a short label for a CTN type."""
-        return str(ctn_type)
+        if ctn_type is None:
+            return ""
+        with suppress(Exception):
+            return str(ctn_type)
+        return ""
 
 
 @dataclass
