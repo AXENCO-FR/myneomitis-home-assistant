@@ -1,8 +1,8 @@
 # serializer version: 1
 # name: test_entities[climate.climate_device-entry]
   EntityRegistryEntrySnapshot({
-    'aliases': set({
-    }),
+    'aliases': list([
+    ]),
     'area_id': None,
     'capabilities': dict({
       'hvac_modes': list([

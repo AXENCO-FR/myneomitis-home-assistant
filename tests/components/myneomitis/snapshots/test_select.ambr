@@ -1,8 +1,9 @@
 # serializer version: 1
 # name: test_entities[select.pilote_device-entry]
   EntityRegistryEntrySnapshot({
-    'aliases': set({
-    }),
+    'aliases': list([
+      None,
+    ]),
     'area_id': None,
     'capabilities': dict({
       'options': list([
@@ -13,9 +14,9 @@
         'boost',
         'setpoint',
         'comfort_plus',
-        'auto',
         'eco_1',
         'eco_2',
+        'auto',
       ]),
     }),
     'config_entry_id': <ANY>,
@@ -60,9 +61,9 @@
         'boost',
         'setpoint',
         'comfort_plus',
-        'auto',
         'eco_1',
         'eco_2',
+        'auto',
       ]),
     }),
     'context': <ANY>,
@@ -75,8 +76,9 @@
 # ---
 # name: test_entities[select.relais_device-entry]
   EntityRegistryEntrySnapshot({
-    'aliases': set({
-    }),
+    'aliases': list([
+      None,
+    ]),
     'area_id': None,
     'capabilities': dict({
       'options': list([
@@ -135,8 +137,9 @@
 # ---
 # name: test_entities[select.ufh_device-entry]
   EntityRegistryEntrySnapshot({
-    'aliases': set({
-    }),
+    'aliases': list([
+      None,
+    ]),
     'area_id': None,
     'capabilities': dict({
       'options': list([
