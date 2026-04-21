@@ -243,9 +243,7 @@ class NTCTemperatureSensor(SensorEntity):
         self.entity_description = description
         self._api = api
         self._device = device
-        self._parents = (
-            parents_to_dict(device["parents"]) if "parents" in device else {}
-        )
+        self._parents = device["parents"]
         self._ntc_index = ntc_index
         self._ctn_type = ctn_type
         self._attr_unique_id = f"myneo_{self._device_id}_ntc{ntc_index}"
@@ -299,7 +297,7 @@ class NTCTemperatureSensor(SensorEntity):
     async def async_update(self) -> None:
         """Fetch the latest state of the NTC temperature sensor."""
         try:
-            response = await self._api.get_sub_device_state(self._parents["gateway"])
+            response = await self._api.get_sub_device_state(self._parents)
         except (
             aiohttp.ClientResponseError,
             TimeoutError,

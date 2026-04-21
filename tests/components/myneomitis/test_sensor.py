@@ -78,7 +78,7 @@ async def test_ntc_temperature_sensor_update_direct() -> None:
         "name": "Sub",
         "model": "NTD",
         "state": {"ntc0Temp": 17.0},
-        "parents": {"gateway": "gw-1"},
+        "parents": ",gw-1,",
         "rfid": "rfid-1",
     }
 
@@ -96,6 +96,8 @@ async def test_ntc_handle_ws_update_changes_value() -> None:
         "name": "Sub",
         "model": "NTD",
         "state": {"ntc0Temp": 17.0},
+        "parents": ",gw-1,",
+        "rfid": "rfid-1",
     }
 
     sensor = sensor_mod.NTCTemperatureSensor(api, dev, 0, 0, None)
@@ -152,7 +154,7 @@ async def test_ntc_sensor_async_update_and_ws() -> None:
         "name": "Sub",
         "model": "NTD",
         "state": {},
-        "parents": {"gateway": "gw"},
+        "parents": ",gw,",
         "rfid": "r1",
     }
     ent = sensor_mod.NTCTemperatureSensor(api, dev, 0, 0, None)
@@ -184,7 +186,14 @@ async def test_native_value_none_and_ntc_low_values() -> None:
     sensor = sensor_mod.DevicesEnergySensor(api, dev_no_state, 0.0)
     assert sensor.native_value is None
 
-    dev_low = {"_id": "s2", "name": "Low", "model": "NTD", "state": {"ntc0Temp": -60}}
+    dev_low = {
+        "_id": "s2",
+        "name": "Low",
+        "model": "NTD",
+        "state": {"ntc0Temp": -60},
+        "parents": ",gw-low,",
+        "rfid": "r-low",
+    }
     ntc = sensor_mod.NTCTemperatureSensor(api, dev_low, 0, 0, None)
     assert ntc.native_value is None
 
@@ -199,6 +208,8 @@ async def test_async_setup_entry_creates_entities_and_updates_options(
         "name": "SetupDevice",
         "model": "EV30",
         "state": {"consumption": 1234, "ctnType": 7, "ntc0Temp": 21.0},
+        "parents": ",gw-setup,",
+        "rfid": "r-setup",
     }
 
     entry = MockConfigEntry(domain="myneomitis", data={}, options={})
