@@ -107,16 +107,8 @@ async def test_ntc_handle_ws_update_changes_value() -> None:
 
 async def test_helpers_and_edge_cases() -> None:
     """Cover helper functions and edge cases for sensors."""
-    assert sensor_mod.CtnType.get_label(5) == "5"
-
     sensor = sensor_mod.Sensors.from_number(7)
     assert (sensor.ctn0, sensor.ctn1, sensor.ctn2) == (7, 7, 7)
-
-    parents_list = [{"type": "gateway", "id": "gw-1"}, {"type": "other", "id": "o1"}]
-    assert sensor_mod.parents_to_dict(parents_list) == {
-        "gateway": "gw-1",
-        "other": "o1",
-    }
 
     resp_map = {"a": {"rfid": "r1", "state": {}}, "b": {"rfid": "r2"}}
     assert sensor_mod.get_device_by_rfid(resp_map, "r2")["rfid"] == "r2"
@@ -169,14 +161,6 @@ async def test_helpers_none_and_exception_paths() -> None:
     """Test helper edge cases: None inputs and exception in label."""
     assert sensor_mod.get_device_by_rfid(None, "x") is None
     assert sensor_mod.get_device_by_rfid({"a": 1}, None) is None
-
-    assert sensor_mod.parents_to_dict("not-a-list-or-dict") == {}
-
-    class BadStr:
-        def __str__(self) -> str:
-            raise RuntimeError("bad")
-
-    assert sensor_mod.CtnType.get_label(BadStr()) == ""
 
 
 async def test_native_value_none_and_ntc_low_values() -> None:

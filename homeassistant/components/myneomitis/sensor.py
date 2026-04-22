@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -23,19 +22,6 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import MyNeomitisConfigEntry, process_connection_update
 from .const import DOMAIN
-
-
-class CtnType:
-    """Simple replacement for CTN type labeling."""
-
-    @staticmethod
-    def get_label(ctn_type: object | None) -> str:
-        """Return a short label for a CTN type."""
-        if ctn_type is None:
-            return ""
-        with suppress(Exception):
-            return str(ctn_type)
-        return ""
 
 
 @dataclass
@@ -78,27 +64,6 @@ def get_device_by_rfid(response: Any, rfid: str) -> dict | None:
             if isinstance(dev, dict) and dev.get("rfid") == rfid:
                 return dev
     return None
-
-
-def parents_to_dict(parents: Any) -> dict:
-    """Normalize `parents` to a dictionary mapping.
-
-    Accept both dict and list shapes for backward compatibility.
-    """
-    if not parents:
-        return {}
-    if isinstance(parents, dict):
-        return parents
-    if isinstance(parents, list):
-        out: dict[str, Any] = {}
-        for item in parents:
-            if isinstance(item, dict):
-                key = item.get("type") or item.get("key") or item.get("role")
-                val = item.get("id") or item.get("value")
-                if key and val:
-                    out[key] = val
-        return out
-    return {}
 
 
 @dataclass(frozen=True, kw_only=True)
