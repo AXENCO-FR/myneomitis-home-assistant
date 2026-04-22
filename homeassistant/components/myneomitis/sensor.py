@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -15,7 +16,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -24,30 +25,12 @@ from . import MyNeomitisConfigEntry, process_connection_update
 from .const import DOMAIN
 
 
-@dataclass
-class Sensors:
-    """Simple representation of CTN sensor slots."""
-
-    ctn0: int | None = None
-    ctn1: int | None = None
-    ctn2: int | None = None
-
-    @staticmethod
-    def from_number(value: int) -> Sensors:
-        """Construct Sensors from a numeric code.
-
-        This implementation is permissive: it returns the value in each
-        slot to preserve ordering used by the platform code.
-        """
-        return Sensors(ctn0=value, ctn1=value, ctn2=value)
-
-
-def get_device_by_rfid(response: Any, rfid: str) -> dict | None:
+def get_device_by_rfid(response: Any, rfid: str | None) -> dict[str, Any] | None:
     """Find a sub-device in an API response by its `rfid`.
 
     The API may return a list or a mapping; handle common shapes.
     """
-    if response is None or rfid is None:
+    if response is None or not rfid:
         return None
     if isinstance(response, dict):
         for val in response.values():
@@ -66,6 +49,11 @@ def get_device_by_rfid(response: Any, rfid: str) -> dict | None:
     return None
 
 
+def get_ntc_indexes(state: Mapping[str, Any]) -> list[int]:
+    """Return available NTC probe indexes from device state."""
+    return [index for index in range(3) if f"ntc{index}Temp" in state]
+
+
 @dataclass(frozen=True, kw_only=True)
 class MyNeoSensorEntityDescription(SensorEntityDescription):
     """Describe MyNeomitis sensor entity."""
@@ -82,9 +70,9 @@ class DevicesEnergySensor(SensorEntity):
 
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
-    _attr_native_unit_of_measurement = "kWh"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     entity_description: MyNeoSensorEntityDescription
 
@@ -99,12 +87,15 @@ class DevicesEnergySensor(SensorEntity):
         self._device_id: str = device["_id"]
         if description is None:
             description = MyNeoSensorEntityDescription(
-                key=f"energy_{self._device_id}", state_key="consumption"
+                key=f"energy_{self._device_id}",
+                translation_key="energy",
+                state_key="consumption",
             )
         self.entity_description = description
         self._api = api
         self._device = device
         self._attr_unique_id = f"myneo_{self._device_id}_energy"
+        self._attr_available = bool(device.get("connected", False))
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             name=device.get("name") or self._device_id,
@@ -160,6 +151,7 @@ class DevicesEnergySensor(SensorEntity):
         try:
             state = await self._api.get_device_state(self._device["_id"])
         except (
+            aiohttp.ClientError,
             aiohttp.ClientResponseError,
             TimeoutError,
             ConnectionError,
@@ -170,8 +162,9 @@ class DevicesEnergySensor(SensorEntity):
             self._attr_available = False
             return
 
-        if not state:
+        if not state or not isinstance(state.get("state"), dict):
             return
+
         self._device["state"] = state["state"]
         if self.hass is not None:
             self.async_write_ha_state()
@@ -181,9 +174,10 @@ class NTCTemperatureSensor(SensorEntity):
     """Sensor for a specific NTC temperature probe."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_has_entity_name = True
-    _attr_should_poll = True
+    _attr_should_poll = False
 
     entity_description: MyNeoSensorEntityDescription
 
@@ -192,7 +186,6 @@ class NTCTemperatureSensor(SensorEntity):
         api: PyAxencoAPI,
         device: dict[str, Any],
         ntc_index: int,
-        ctn_type: int | None,
         description: MyNeoSensorEntityDescription | None = None,
     ) -> None:
         """Initialize the NTC temperature sensor."""
@@ -200,6 +193,8 @@ class NTCTemperatureSensor(SensorEntity):
         if description is None:
             description = MyNeoSensorEntityDescription(
                 key=f"ntc_{self._device_id}_{ntc_index}",
+                translation_key="ntc_temperature",
+                translation_placeholders={"index": str(ntc_index + 1)},
                 state_key=f"ntc{ntc_index}Temp",
                 ntc_index=ntc_index,
                 device_class=SensorDeviceClass.TEMPERATURE,
@@ -208,10 +203,13 @@ class NTCTemperatureSensor(SensorEntity):
         self.entity_description = description
         self._api = api
         self._device = device
-        self._parents = device["parents"]
+        self._parents = (
+            device.get("parents") if isinstance(device.get("parents"), str) else None
+        )
+        self._rfid = device.get("rfid") if isinstance(device.get("rfid"), str) else None
         self._ntc_index = ntc_index
-        self._ctn_type = ctn_type
         self._attr_unique_id = f"myneo_{self._device_id}_ntc{ntc_index}"
+        self._attr_available = bool(device.get("connected", False))
         self._attr_device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, self._device_id)},
             name=device.get("name") or self._device_id,
@@ -255,15 +253,20 @@ class NTCTemperatureSensor(SensorEntity):
     def native_value(self) -> float | None:
         """Return the current temperature value or None if invalid."""
         temp = self._device.get("state", {}).get(f"ntc{self._ntc_index}Temp")
-        if temp is None:
+        if not isinstance(temp, int | float):
             return None
         return temp if temp > -50 else None
 
     async def async_update(self) -> None:
         """Fetch the latest state of the NTC temperature sensor."""
+        if not self._parents or not self._rfid:
+            self._attr_available = False
+            return
+
         try:
             response = await self._api.get_sub_device_state(self._parents)
         except (
+            aiohttp.ClientError,
             aiohttp.ClientResponseError,
             TimeoutError,
             ConnectionError,
@@ -274,9 +277,10 @@ class NTCTemperatureSensor(SensorEntity):
             self._attr_available = False
             return
 
-        state = get_device_by_rfid(response, self._device["rfid"])
-        if not state:
+        state = get_device_by_rfid(response, self._rfid)
+        if not state or not isinstance(state.get("state"), dict):
             return
+
         self._device["state"] = state["state"]
         if self.hass is not None:
             self.async_write_ha_state()
@@ -294,18 +298,24 @@ async def async_setup_entry(
     options = dict(config_entry.options)
     updated = False
 
-    added_ids = set()
-    entities_by_id: dict[str, list[SensorEntity]] = {}
-
     def _create_entities(device: dict) -> list[SensorEntity]:
         nonlocal updated
+
+        uid = device.get("_id")
+        if not uid:
+            _LOGGER.warning(
+                "Skipping sensor device without _id: %s", device.get("name")
+            )
+            return []
+
+        state = device.get("state")
+        if not isinstance(state, dict):
+            return []
+
         entities: list[SensorEntity] = []
-        state = device.get("state", {})
-        uid = device["_id"]
-        added_ids.add(uid)
 
         # Energy sensor
-        if "consumption" in state:
+        if isinstance(state.get("consumption"), int | float):
             key = f"{uid}_offset"
             current_value = round(state["consumption"] / 1000, 3)
             base_offset = float(options.get(key, current_value))
@@ -316,36 +326,41 @@ async def async_setup_entry(
 
             desc = MyNeoSensorEntityDescription(
                 key=f"energy_{uid}",
+                translation_key="energy",
                 state_key="consumption",
-                native_unit_of_measurement="kWh",
+                native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
                 device_class=SensorDeviceClass.ENERGY,
             )
             entities.append(DevicesEnergySensor(api, device, base_offset, desc))
 
         # NTC sensors
-        if "ctnType" in state:
-            ctn_sensors = Sensors.from_number(state["ctnType"])
-            for index, ctn_type in enumerate(
-                [ctn_sensors.ctn0, ctn_sensors.ctn1, ctn_sensors.ctn2]
+        ntc_indexes = get_ntc_indexes(state)
+        if ntc_indexes:
+            if not isinstance(device.get("parents"), str) or not isinstance(
+                device.get("rfid"), str
             ):
-                temp_key = f"ntc{index}Temp"
-                if temp_key in state:
-                    desc = MyNeoSensorEntityDescription(
-                        key=f"ntc_{uid}_{index}",
-                        state_key=temp_key,
-                        ntc_index=index,
-                        device_class=SensorDeviceClass.TEMPERATURE,
-                        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-                    )
-                    entities.append(
-                        NTCTemperatureSensor(api, device, index, ctn_type, desc)
-                    )
+                _LOGGER.warning(
+                    "Skipping NTC sensors for %s: missing parents or rfid",
+                    uid,
+                )
+                return entities
 
-        if entities:
-            entities_by_id[f"myneo_{uid}"] = entities
+            for index in ntc_indexes:
+                temp_key = f"ntc{index}Temp"
+                desc = MyNeoSensorEntityDescription(
+                    key=f"ntc_{uid}_{index}",
+                    translation_key="ntc_temperature",
+                    translation_placeholders={"index": str(index + 1)},
+                    state_key=temp_key,
+                    ntc_index=index,
+                    device_class=SensorDeviceClass.TEMPERATURE,
+                    native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+                )
+                entities.append(NTCTemperatureSensor(api, device, index, desc))
+
         return entities
 
-    initial_entities = []
+    initial_entities: list[SensorEntity] = []
     for device in devices:
         initial_entities.extend(_create_entities(device))
 

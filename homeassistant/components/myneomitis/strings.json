@@ -70,6 +70,14 @@
           "heating": "Heating"
         }
       }
+    },
+    "sensor": {
+      "energy": {
+        "name": "Energy"
+      },
+      "ntc_temperature": {
+        "name": "NTC probe {index} temperature"
+      }
     }
   }
 }

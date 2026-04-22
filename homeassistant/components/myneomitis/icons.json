@@ -44,6 +44,14 @@
           "heating": "mdi:fire"
         }
       }
+    },
+    "sensor": {
+      "energy": {
+        "default": "mdi:lightning-bolt"
+      },
+      "ntc_temperature": {
+        "default": "mdi:thermometer"
+      }
     }
   }
 }
