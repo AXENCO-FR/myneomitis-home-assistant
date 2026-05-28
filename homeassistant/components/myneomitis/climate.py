@@ -1,12 +1,16 @@
 """Climate entities for MyNeomitis integration."""
 
-from __future__ import annotations
-
+from collections.abc import Mapping
 import logging
 from typing import Any
 
 import aiohttp
 from pyaxencoapi import PRESET_MODE_MODELS, Preset, PyAxencoAPI
+
+try:
+    from pyaxencoapi import PRESET_MODE_MAP
+except ImportError:  # pragma: no cover - only needed for newer library versions
+    PRESET_MODE_MAP = {}
 
 from homeassistant.components.climate import (
     ClimateEntity,
@@ -30,6 +34,29 @@ STANDBY_PRESET = Preset.STANDBY.key
 SETPOINT_PRESET = Preset.SETPOINT.key
 
 
+def _resolve_preset_maps(
+    model: str,
+) -> tuple[list[str], dict[str, int], dict[int, str]]:
+    """Resolve preset maps for both old and new pyaxencoapi structures."""
+    preset_model = PRESET_MODE_MODELS[model]
+
+    if isinstance(preset_model, Mapping) or hasattr(preset_model, "items"):
+        preset_map = dict(preset_model)
+        reverse_map = (
+            preset_model.reverse
+            if hasattr(preset_model, "reverse")
+            else {code: key for key, code in preset_map.items()}
+        )
+        return list(preset_model), preset_map, reverse_map
+
+    preset_modes = list(preset_model)
+    preset_map = {
+        key: PRESET_MODE_MAP[key] for key in preset_modes if key in PRESET_MODE_MAP
+    }
+    reverse_map = {code: key for key, code in preset_map.items()}
+    return preset_modes, preset_map, reverse_map
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: MyNeomitisConfigEntry,
@@ -45,6 +72,7 @@ async def async_setup_entry(
         if model not in SUPPORTED_MODELS | SUPPORTED_SUB_MODELS:
             continue
 
+        # Guard against missing preset mappings (library version gaps or new device models).
         if model not in PRESET_MODE_MODELS:
             _LOGGER.warning(
                 "Skipping climate device %s: model %s has no preset mapping",
@@ -100,9 +128,11 @@ class MyNeoClimate(ClimateEntity):
         self._is_sub_device = model in SUPPORTED_SUB_MODELS
         self._parents = device.get("parents")
 
-        self._preset_mode_map = PRESET_MODE_MODELS[str(model)]
-        self._preset_mode_map_reverse = self._preset_mode_map.reverse
-        self._attr_preset_modes = list(self._preset_mode_map)
+        (
+            self._attr_preset_modes,
+            self._preset_mode_map,
+            self._preset_mode_map_reverse,
+        ) = _resolve_preset_maps(str(model))
 
         self._attr_min_temp = state.get("comfLimitMin", 7)
         self._attr_max_temp = state.get("comfLimitMax", 30)
@@ -304,7 +334,8 @@ class MyNeoClimate(ClimateEntity):
             ok = await self._set_device_mode(preset_to_restore)
             if not ok:
                 raise HomeAssistantError(
-                    f"Failed to restore preset '{preset_to_restore}' for {self.entity_id}"
+                    f"Failed to restore preset '{preset_to_restore}'"
+                    f" for {self.entity_id}"
                 )
             self._attr_preset_mode = preset_to_restore
 
@@ -347,7 +378,8 @@ class MyNeoClimate(ClimateEntity):
                 rfid = self._device.get("rfid")
                 if not parents or not rfid:
                     _LOGGER.error(
-                        "Missing parents or rfid for sub-device %s, cannot set temperature",
+                        "Missing gateway or rfid for sub-device"
+                        " %s, cannot set temperature",
                         self._attr_unique_id,
                     )
                     return False

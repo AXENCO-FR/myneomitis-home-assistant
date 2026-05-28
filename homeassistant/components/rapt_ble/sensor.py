@@ -1,7 +1,5 @@
 """Support for RAPT Pill hydrometers."""
 
-from __future__ import annotations
-
 from rapt_ble import DeviceClass, DeviceKey, SensorUpdate, Units
 
 from homeassistant.components.bluetooth.passive_update_processor import (
@@ -107,7 +105,9 @@ async def async_setup_entry(
             RAPTPillBluetoothSensorEntity, async_add_entities
         )
     )
-    entry.async_on_unload(coordinator.async_register_processor(processor))
+    entry.async_on_unload(
+        coordinator.async_register_processor(processor, SensorEntityDescription)
+    )
 
 
 class RAPTPillBluetoothSensorEntity(

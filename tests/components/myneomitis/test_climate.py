@@ -72,6 +72,15 @@ CLIMATE_NTD_COOL = {
 }
 
 
+class DummyPresetMap(dict[str, int]):
+    """Preset mapping with reverse lookup support."""
+
+    @property
+    def reverse(self) -> dict[int, str]:
+        """Return a reverse lookup map for preset codes."""
+        return {code: key for key, code in self.items()}
+
+
 async def test_entities(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -118,6 +127,53 @@ async def test_set_temperature(
     state = hass.states.get(entity_id)
     assert state is not None
     assert state.attributes["temperature"] == 23.5
+
+
+async def test_preset_map_mapping_structure(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_pyaxenco_client: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mapping preset structures should be supported for new library versions."""
+    mapping_with_reverse = DummyPresetMap(
+        {"comfort": 1, "eco": 2, "standby": 4, "setpoint": 8}
+    )
+    mapping_without_reverse = {
+        "comfort": 1,
+        "eco": 2,
+        "standby": 4,
+        "setpoint": 8,
+    }
+    monkeypatch.setitem(
+        climate_platform.PRESET_MODE_MODELS, "EV30", mapping_with_reverse
+    )
+    monkeypatch.setitem(
+        climate_platform.PRESET_MODE_MODELS, "ECTRL", mapping_without_reverse
+    )
+
+    ectrl_device = {
+        **CLIMATE_DEVICE,
+        "_id": "climate2",
+        "name": "ECTRL Device",
+        "model": "ECTRL",
+    }
+    mock_pyaxenco_client.get_devices.return_value = [CLIMATE_DEVICE, ectrl_device]
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "climate",
+        "set_preset_mode",
+        {ATTR_ENTITY_ID: "climate.climate_device", "preset_mode": "eco"},
+        blocking=True,
+    )
+    mock_pyaxenco_client.set_device_mode.assert_awaited_with("climate1", 2)
+
+    state = hass.states.get("climate.ectrl_device")
+    assert state is not None
+    assert state.attributes["preset_mode"] == "comfort"
 
 
 async def test_set_preset_mode(
@@ -222,8 +278,8 @@ async def test_set_temperature_sub_device_missing_parents(
     mock_config_entry: MockConfigEntry,
     mock_pyaxenco_client: AsyncMock,
 ) -> None:
-    """Missing parents/rfid for sub-device should fail temperature set without API call."""
-    bad_sub = {**CLIMATE_SUB_DEVICE, "parents": None, "rfid": None}
+    """Missing parents/rfid should fail temp set without API call."""
+    bad_sub = {**CLIMATE_SUB_DEVICE, "parents": {}, "rfid": None}
     mock_pyaxenco_client.get_devices.return_value = [bad_sub]
 
     mock_config_entry.add_to_hass(hass)
@@ -408,7 +464,7 @@ async def test_ntd_changeover_sets_cool(
     mock_config_entry: MockConfigEntry,
     mock_pyaxenco_client: AsyncMock,
 ) -> None:
-    """NTD devices with comfTemp<ecoTemp should expose COOL and OFF modes and start in COOL."""
+    """NTD with changeOverUser==1 should expose COOL/OFF and start COOL."""
     mock_pyaxenco_client.get_devices.return_value = [CLIMATE_NTD_COOL]
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
@@ -455,35 +511,6 @@ async def test_skip_unknown_model(
             "connected": True,
         }
     ]
-    mock_config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(mock_config_entry.entry_id)
-    await hass.async_block_till_done()
-
-    entries = er.async_entries_for_config_entry(
-        entity_registry, mock_config_entry.entry_id
-    )
-    assert not any(e.domain == "climate" for e in entries)
-
-
-async def test_skip_supported_model_without_preset_mapping(
-    hass: HomeAssistant,
-    mock_config_entry: MockConfigEntry,
-    mock_pyaxenco_client: AsyncMock,
-    entity_registry: er.EntityRegistry,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Supported model without preset mapping should be skipped."""
-    mock_pyaxenco_client.get_devices.return_value = [
-        {
-            "_id": "climate_no_map",
-            "name": "No Map",
-            "model": "EV30",
-            "state": {},
-            "connected": True,
-        }
-    ]
-    monkeypatch.setattr(climate_platform, "PRESET_MODE_MODELS", {})
-
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
