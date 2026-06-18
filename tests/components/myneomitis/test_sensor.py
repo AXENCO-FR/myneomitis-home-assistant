@@ -2,12 +2,11 @@
 
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from homeassistant.components.myneomitis import (
-    MyNeomitisRuntimeData,
-    sensor as sensor_mod,
-)
+from homeassistant.components.myneomitis import sensor as sensor_mod
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -179,6 +178,9 @@ async def test_helpers_and_edge_cases() -> None:
     resp_devices = {"devices": [{"rfid": "rx"}, {"rfid": "ry"}]}
     assert sensor_mod.get_device_by_rfid(resp_devices, "ry")["rfid"] == "ry"
 
+    resp_list = [{"rfid": "rx"}, {"rfid": "ry"}]
+    assert sensor_mod.get_device_by_rfid(resp_list, "ry")["rfid"] == "ry"
+
     api = AsyncMock()
     dev = {**SAMPLE_DEVICE}
     sensor = sensor_mod.DevicesEnergySensor(api, dev, 2.0)
@@ -246,10 +248,9 @@ async def test_native_value_none_and_ntc_low_values() -> None:
 
 
 async def test_async_setup_entry_creates_entities_and_updates_options(
-    hass: HomeAssistant,
+    hass: HomeAssistant, mock_pyaxenco_client: AsyncMock
 ) -> None:
     """Test that async_setup_entry adds sensors and updates options for offsets."""
-    api = AsyncMock()
     device = {
         "_id": "dev_setup",
         "name": "SetupDevice",
@@ -258,16 +259,131 @@ async def test_async_setup_entry_creates_entities_and_updates_options(
         "parents": ",gw-setup,",
         "rfid": "r-setup",
     }
-
-    entry = MockConfigEntry(domain="myneomitis", data={}, options={})
+    mock_pyaxenco_client.get_devices.return_value = [device]
+    entry = MockConfigEntry(
+        domain="myneomitis",
+        data={CONF_EMAIL: "test@example.com", CONF_PASSWORD: "password"},
+        options={},
+    )
     entry.add_to_hass(hass)
-    entry.runtime_data = MyNeomitisRuntimeData(api=api, devices=[device])
 
-    added: list = []
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
 
-    def add_entities(entities):
-        added.extend(entities)
-
-    await sensor_mod.async_setup_entry(hass, entry, add_entities)
-    assert len(added) >= 1
+    assert len(hass.states.async_entity_ids("sensor")) >= 1
     assert f"{device['_id']}_offset" in entry.options
+
+
+async def test_async_setup_entry_no_devices(
+    hass: HomeAssistant, mock_pyaxenco_client: AsyncMock
+) -> None:
+    """Test async_setup_entry with no devices."""
+    mock_pyaxenco_client.get_devices.return_value = []
+    entry = MockConfigEntry(
+        domain="myneomitis",
+        data={CONF_EMAIL: "test@example.com", CONF_PASSWORD: "password"},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert len(hass.states.async_entity_ids("sensor")) == 0
+
+
+@pytest.mark.parametrize(
+    ("sensor_class", "device_data", "extra_args"),
+    [
+        (sensor_mod.DevicesEnergySensor, SAMPLE_DEVICE, (0.0,)),
+        (sensor_mod.NTCTemperatureSensor, SAMPLE_SUB_DEVICE, (0, None)),
+    ],
+)
+async def test_websocket_logging(
+    sensor_class, device_data, extra_args, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test websocket listener logs availability changes only once."""
+    api = AsyncMock()
+    entity = sensor_class(api, {**device_data}, *extra_args)
+    entity.entity_id = "sensor.test"
+    entity._attr_available = True
+
+    # Goes offline
+    entity.handle_ws_update({"connected": False})
+    assert "is unavailable" in caplog.text
+    caplog.clear()
+
+    # Stays offline, should not log again
+    entity.handle_ws_update({"connected": False})
+    assert not caplog.text
+
+    # Comes back online
+    entity.handle_ws_update({"connected": True})
+    assert "is back online" in caplog.text
+    caplog.clear()
+
+    # Stays online, should not log again
+    entity.handle_ws_update({"connected": True})
+    assert not caplog.text
+
+
+async def test_ntc_sensor_update_missing_parents_rfid() -> None:
+    """Test NTC sensor becomes unavailable if parents or rfid are missing."""
+    api = AsyncMock()
+    device = {**SAMPLE_SUB_DEVICE, "parents": None, "rfid": None}
+    sensor = sensor_mod.NTCTemperatureSensor(api, device, 0, None)
+    sensor._attr_available = True
+
+    await sensor.async_update()
+    assert sensor.available is False
+
+
+@pytest.mark.parametrize(
+    ("sensor_class", "device_data", "extra_args", "api_method", "api_return"),
+    [
+        (
+            sensor_mod.DevicesEnergySensor,
+            SAMPLE_DEVICE,
+            (0.0,),
+            "get_device_state",
+            None,
+        ),
+        (
+            sensor_mod.DevicesEnergySensor,
+            SAMPLE_DEVICE,
+            (0.0,),
+            "get_device_state",
+            {"state": None},
+        ),
+        (
+            sensor_mod.NTCTemperatureSensor,
+            SAMPLE_SUB_DEVICE,
+            (0, None),
+            "get_sub_device_state",
+            None,
+        ),
+        (
+            sensor_mod.NTCTemperatureSensor,
+            SAMPLE_SUB_DEVICE,
+            (0, None),
+            "get_sub_device_state",
+            [{"rfid": "rfid-sub-1", "state": None}],
+        ),
+    ],
+)
+async def test_async_update_invalid_response(
+    sensor_class,
+    device_data,
+    extra_args,
+    api_method,
+    api_return,
+) -> None:
+    """Test async_update handles invalid API responses gracefully."""
+    api = AsyncMock()
+    getattr(api, api_method).return_value = api_return
+    entity = sensor_class(api, {**device_data}, *extra_args)
+    initial_value = entity.native_value
+
+    await entity.async_update()
+
+    assert entity.native_value == initial_value
