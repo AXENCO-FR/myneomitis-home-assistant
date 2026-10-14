@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, override
 
 from greencell_client.access import GreencellAccess
 from greencell_client.elec_data import ElecData3Phase, ElecDataSinglePhase
@@ -223,6 +223,22 @@ async def async_setup_entry(
         """Handle the device state message. If device was unavailable, enable the entity."""
         access.on_msg(msg.payload)
 
+    unavailable_logged = False
+
+    @callback
+    def log_availability_change() -> None:
+        """Log the device going unavailable and coming back, once per transition."""
+        nonlocal unavailable_logged
+        if access.is_disabled():
+            if not unavailable_logged:
+                _LOGGER.warning("Device %s is unavailable", serial_number)
+                unavailable_logged = True
+        elif unavailable_logged:
+            _LOGGER.info("Device %s is available again", serial_number)
+            unavailable_logged = False
+
+    access.register_listener(log_availability_change)
+
     try:
         for topic, handler in (
             (mqtt_topic_current, current_message_received),
@@ -276,10 +292,12 @@ class HabuSensor(SensorEntity):
         )
 
     @property
+    @override
     def available(self) -> bool:
         """Return True if the entity is available."""
         return not self._access.is_disabled()
 
+    @override
     async def async_added_to_hass(self) -> None:
         """Register the entity with Home Assistant."""
         unsub = self._access.register_listener(self._schedule_update)
@@ -309,6 +327,7 @@ class Habu3PhaseSensor(HabuSensor):
         self._phase = phase
 
     @property
+    @override
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         raw_value = self._sensor_data.get_value(self._phase)
@@ -333,6 +352,7 @@ class HabuSingleSensor(HabuSensor):
         self._value = sensor_data
 
     @property
+    @override
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         raw_value = self._value.data

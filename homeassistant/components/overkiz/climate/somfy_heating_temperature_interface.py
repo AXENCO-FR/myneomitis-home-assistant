@@ -1,6 +1,6 @@
 """Support for Somfy Heating Temperature Interface."""
 
-from typing import Any
+from typing import Any, override
 
 from pyoverkiz.enums import OverkizCommand, OverkizCommandParam, OverkizState
 
@@ -74,7 +74,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
     to a cooling floor in the summer.
     """
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_supported_features = (
         ClimateEntityFeature.PRESET_MODE
         | ClimateEntityFeature.TARGET_TEMPERATURE
@@ -97,6 +97,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
         )
 
     @property
+    @override
     def hvac_mode(self) -> HVACMode:
         """Return hvac operation i.e. heat, cool mode."""
         state = self.device.states.get(OverkizState.CORE_ON_OFF)
@@ -112,6 +113,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
 
         return HVACMode.OFF
 
+    @override
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         if hvac_mode is HVACMode.OFF:
@@ -124,6 +126,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
             )
 
     @property
+    @override
     def preset_mode(self) -> str | None:
         """Return the current preset mode, e.g., home, away, temp."""
         if (
@@ -134,6 +137,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
             return OVERKIZ_TO_PRESET_MODES[state.value_as_str]
         return None
 
+    @override
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
         await self.executor.async_execute_command(
@@ -142,6 +146,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
         )
 
     @property
+    @override
     def hvac_action(self) -> HVACAction | None:
         """Return the current running hvac operation if supported."""
         if (
@@ -154,7 +159,8 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
         return None
 
     @property
-    def target_temperature(self) -> float | None:
+    @override
+    def native_target_temperature(self) -> float | None:
         """Return the target temperature."""
 
         # Allow to get the current target temperature for the current preset
@@ -172,7 +178,8 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
         return None
 
     @property
-    def current_temperature(self) -> float | None:
+    @override
+    def native_current_temperature(self) -> float | None:
         """Return the current temperature."""
         if self.temperature_device is not None and (
             temperature := self.temperature_device.states.get(
@@ -182,6 +189,7 @@ class SomfyHeatingTemperatureInterface(OverkizEntity, ClimateEntity):
             return temperature.value_as_float
         return None
 
+    @override
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new temperature."""
         temperature = kwargs[ATTR_TEMPERATURE]

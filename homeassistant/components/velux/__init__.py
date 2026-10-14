@@ -2,7 +2,7 @@
 
 import dataclasses
 
-from pyvlx import PyVLX, PyVLXException, Window
+from pyvlx import OpeningDevice, PyVLX, PyVLXException
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -32,7 +32,7 @@ type VeluxConfigEntry = ConfigEntry[VeluxData]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> None:
     """Set up the velux component."""
     host = entry.data[CONF_HOST]
     password = entry.data[CONF_PASSWORD]
@@ -75,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> boo
 
     limitation_coordinators: dict[int, VeluxLimitationCoordinator] = {}
     for node in pyvlx.nodes:
-        if isinstance(node, Window) and node.rain_sensor:
+        if isinstance(node, OpeningDevice):
             coordinator = VeluxLimitationCoordinator(hass, entry, node)
             # do not await coordinator.async_config_entry_first_refresh() here to avoid doing
             # it for disabled entities, the entities will call it when they are added to hass
@@ -116,15 +116,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> boo
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    return True
 
-
-async def async_unload_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: VeluxConfigEntry) -> None:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        # Disconnect from gateway only after platforms are successfully unloaded.
-        # Disconnecting will reboot the gateway in the pyvlx
-        # library, which is needed to allow new
-        # connections to be made later.
-        await entry.runtime_data.pyvlx.disconnect()
-    return unload_ok
+    await hass.config_entries.async_unload_platforms_or_raise(entry, PLATFORMS)
+    # Disconnect from gateway only after platforms are successfully unloaded.
+    # Disconnecting will reboot the gateway in the pyvlx
+    # library, which is needed to allow new
+    # connections to be made later.
+    await entry.runtime_data.pyvlx.disconnect()

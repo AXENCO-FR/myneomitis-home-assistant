@@ -1,8 +1,7 @@
 """Data update coordinator for the Webmin integration."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, override
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_CONNECTIONS, ATTR_IDENTIFIERS, CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
@@ -16,15 +15,18 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .const import DOMAIN, LOGGER
 from .helpers import get_instance_from_options, get_sorted_mac_addresses
 
+if TYPE_CHECKING:
+    from . import WebminConfigEntry
+
 
 class WebminUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """The Webmin data update coordinator."""
 
-    config_entry: ConfigEntry
+    config_entry: WebminConfigEntry
     mac_address: str
     unique_id: str
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: WebminConfigEntry) -> None:
         """Initialize the Webmin data update coordinator."""
 
         super().__init__(
@@ -57,6 +59,7 @@ class WebminUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         else:
             self.unique_id = self.config_entry.entry_id
 
+    @override
     async def _async_update_data(self) -> dict[str, Any]:
         data = await self.instance.update()
         data["disk_fs"] = {item["dir"]: item for item in data["disk_fs"]}

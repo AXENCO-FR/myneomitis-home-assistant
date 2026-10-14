@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 import logging
-from typing import Any
+from typing import Any, override
 
 from blebox_uniapi.box import Box
 from blebox_uniapi.error import (
@@ -12,7 +12,7 @@ from blebox_uniapi.error import (
     UnsupportedBoxVersion,
 )
 from blebox_uniapi.session import ApiHost
-import voluptuous as vol
+import probatio
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
@@ -36,12 +36,12 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-STEP_SCHEMA = vol.Schema(
+STEP_SCHEMA = probatio.Schema(
     {
-        vol.Required(CONF_HOST, default=DEFAULT_HOST): str,
-        vol.Required(CONF_PORT, default=DEFAULT_PORT): int,
-        vol.Inclusive(CONF_USERNAME, "auth"): str,
-        vol.Inclusive(CONF_PASSWORD, "auth"): str,
+        probatio.Required(CONF_HOST, default=DEFAULT_HOST): str,
+        probatio.Required(CONF_PORT, default=DEFAULT_PORT): int,
+        probatio.Inclusive(CONF_USERNAME, "auth"): str,
+        probatio.Inclusive(probatio.Secret(CONF_PASSWORD), "auth"): str,
     }
 )
 
@@ -147,12 +147,14 @@ class BleBoxConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return await self.async_step_confirm_discovery()
 
+    @override
     async def async_step_dhcp(
         self, discovery_info: DhcpServiceInfo
     ) -> ConfigFlowResult:
         """Handle DHCP discovery."""
         return await self._async_handle_discovery(discovery_info.ip, DEFAULT_PORT)
 
+    @override
     async def async_step_zeroconf(
         self, discovery_info: ZeroconfServiceInfo
     ) -> ConfigFlowResult:
@@ -182,6 +184,7 @@ class BleBoxConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -317,10 +320,10 @@ class BleBoxConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Inclusive(CONF_USERNAME, "auth"): str,
-                    vol.Inclusive(CONF_PASSWORD, "auth"): str,
+                    probatio.Inclusive(CONF_USERNAME, "auth"): str,
+                    probatio.Inclusive(probatio.Secret(CONF_PASSWORD), "auth"): str,
                 }
             ),
             errors=errors,

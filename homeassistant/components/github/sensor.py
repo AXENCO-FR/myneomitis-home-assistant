@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, override
 
 from aiogithubapi import GitHubAuthenticatedUserModel
 
@@ -85,6 +85,16 @@ SENSOR_DESCRIPTIONS: tuple[GitHubSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.TOTAL,
         value_fn=lambda data: data["merged_pull_request"]["total"],
+    ),
+    GitHubSensorEntityDescription(
+        key="latest_release_downloads",
+        translation_key="latest_release_downloads",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        avabl_fn=lambda data: data["release"] and data["release"]["assets"]["nodes"],
+        value_fn=lambda data: sum(
+            asset["download_count"] for asset in data["release"]["assets"]["nodes"]
+        ),
     ),
     GitHubSensorEntityDescription(
         key="latest_commit",
@@ -236,6 +246,7 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
         )
 
     @property
+    @override
     def available(self) -> bool:
         """Return True if entity is available."""
         return (
@@ -245,11 +256,13 @@ class GitHubSensorEntity(CoordinatorEntity[GitHubDataUpdateCoordinator], SensorE
         )
 
     @property
+    @override
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator.data)
 
     @property
+    @override
     def extra_state_attributes(self) -> Mapping[str, Any] | None:
         """Return the extra state attributes."""
         return self.entity_description.attr_fn(self.coordinator.data)
@@ -284,6 +297,7 @@ class GitHubUserSensorEntity(
         )
 
     @property
+    @override
     def native_value(self) -> StateType:
         """Return the state of the sensor."""
         return self.entity_description.value_fn(self.coordinator.data)

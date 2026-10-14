@@ -1,6 +1,6 @@
 """Support for HitachiAirToAirHeatPump."""
 
-from typing import Any
+from typing import Any, override
 
 from pyoverkiz.enums import OverkizCommand, OverkizCommandParam, OverkizState
 
@@ -91,7 +91,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
     _attr_preset_modes = [PRESET_NONE, PRESET_HOLIDAY_MODE]
     _attr_swing_modes = [*SWING_MODES_TO_OVERKIZ]
     _attr_target_temperature_step = 1.0
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_translation_key = DOMAIN
 
     def __init__(
@@ -115,6 +115,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
             self._attr_device_info["manufacturer"] = "Hitachi"
 
     @property
+    @override
     def hvac_mode(self) -> HVACMode:
         """Return hvac operation ie. heat, cool mode."""
         if (
@@ -133,6 +134,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
 
         return HVACMode.OFF
 
+    @override
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         if hvac_mode == HVACMode.OFF:
@@ -144,6 +146,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
             )
 
     @property
+    @override
     def fan_mode(self) -> str | None:
         """Return the fan setting."""
         if (
@@ -153,11 +156,13 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
 
         return None
 
+    @override
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set new target fan mode."""
         await self._global_control(fan_mode=FAN_MODES_TO_OVERKIZ[fan_mode])
 
     @property
+    @override
     def swing_mode(self) -> str | None:
         """Return the swing setting."""
         if (
@@ -167,12 +172,14 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
 
         return None
 
+    @override
     async def async_set_swing_mode(self, swing_mode: str) -> None:
         """Set new target swing operation."""
         await self._global_control(swing_mode=SWING_MODES_TO_OVERKIZ[swing_mode])
 
     @property
-    def target_temperature(self) -> int | None:
+    @override
+    def native_target_temperature(self) -> int | None:
         """Return the target temperature."""
         if (
             temperature := self.device.states.get(OverkizState.CORE_TARGET_TEMPERATURE)
@@ -182,7 +189,8 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
         return None
 
     @property
-    def current_temperature(self) -> int | None:
+    @override
+    def native_current_temperature(self) -> int | None:
         """Return current temperature."""
         if (
             state := self.device.states.get(OverkizState.OVP_ROOM_TEMPERATURE)
@@ -191,11 +199,13 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
 
         return None
 
+    @override
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new temperature."""
         await self._global_control(target_temperature=int(kwargs[ATTR_TEMPERATURE]))
 
     @property
+    @override
     def preset_mode(self) -> str | None:
         """Return the current preset mode, e.g., home, away, temp."""
         if (
@@ -209,6 +219,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
 
         return None
 
+    @override
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         """Set new preset mode."""
         if preset_mode == PRESET_HOLIDAY_MODE:
@@ -244,6 +255,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
         return None
 
     @property
+    @override
     def min_temp(self) -> float:
         """Return the minimum temperature."""
         if self.hvac_mode == HVACMode.AUTO:
@@ -251,6 +263,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
         return TEMP_MIN
 
     @property
+    @override
     def max_temp(self) -> float:
         """Return the maximum temperature."""
         if self.hvac_mode == HVACMode.AUTO:
@@ -332,7 +345,7 @@ class HitachiAirToAirHeatPumpOVP(OverkizEntity, ClimateEntity):
         # In all the hvac modes except AUTO, the temperature
         # command parameter is the target temperature
         temperature_command = None
-        target_temperature = target_temperature or self.target_temperature
+        target_temperature = target_temperature or self.native_target_temperature
         if hvac_mode == OverkizCommandParam.AUTO:
             # In hvac mode AUTO, the temperature command
             # parameter is a temperature_change which is the

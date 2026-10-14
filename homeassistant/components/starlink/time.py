@@ -2,8 +2,9 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, time, tzinfo
+from datetime import UTC, time, tzinfo
 import math
+from typing import override
 
 from homeassistant.components.time import TimeEntity, TimeEntityDescription
 from homeassistant.core import HomeAssistant
@@ -42,6 +43,7 @@ class StarlinkTimeEntity(StarlinkEntity, TimeEntity):
     entity_description: StarlinkTimeEntityDescription
 
     @property
+    @override
     def native_value(self) -> time | None:
         """Return the value reported by the time."""
         return self.entity_description.value_fn(
@@ -49,10 +51,14 @@ class StarlinkTimeEntity(StarlinkEntity, TimeEntity):
         )
 
     @property
+    @override
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.entity_description.available_fn(self.coordinator.data)
+        return super().available and self.entity_description.available_fn(
+            self.coordinator.data
+        )
 
+    @override
     async def async_set_value(self, value: time) -> None:
         """Change the time."""
         return await self.entity_description.update_fn(self.coordinator, value)
@@ -74,9 +80,9 @@ def _utc_minutes_to_time(utc_minutes: int, timezone: tzinfo) -> time:
 
 def _time_to_utc_minutes(t: time, timezone: tzinfo) -> int:
     try:
-        zoned_time = datetime.now(  # pylint: disable=home-assistant-enforce-now
-            timezone
-        ).replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+        zoned_time = dt_util.now(timezone).replace(
+            hour=t.hour, minute=t.minute, second=0, microsecond=0
+        )
     except ValueError as exc:
         raise HomeAssistantError from exc
     utc_time = zoned_time.astimezone(UTC).time()

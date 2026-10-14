@@ -4,10 +4,10 @@ import asyncio
 from collections.abc import Callable
 import json
 import logging
-from typing import Any
+from typing import Any, override
 
 from greencell_client.utils import GreencellUtils
-import voluptuous as vol
+import probatio
 
 from homeassistant import config_entries
 from homeassistant.components import mqtt
@@ -64,6 +64,7 @@ class EVSEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._discovery_event:
                 self._discovery_event.set()
 
+    @override
     async def async_step_mqtt(
         self, discovery_info: MqttServiceInfo
     ) -> config_entries.ConfigFlowResult:
@@ -103,6 +104,7 @@ class EVSEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"serial": serial},
         )
 
+    @override
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -166,9 +168,9 @@ class EVSEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="select",
-            data_schema=vol.Schema(
+            data_schema=probatio.Schema(
                 {
-                    vol.Required(CONF_SERIAL_NUMBER): vol.In(
+                    probatio.Required(CONF_SERIAL_NUMBER): probatio.In(
                         list(self._discovered.keys())
                     )
                 }

@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 import datetime
 import logging
+from typing import override
 
 import aiohttp
 from pyrainbird.async_client import (
@@ -14,7 +15,7 @@ from pyrainbird.async_client import (
 from pyrainbird.data import ModelAndVersion, Schedule
 
 from homeassistant.const import CONF_MAC
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.debounce import Debouncer
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -118,6 +119,7 @@ class RainbirdUpdateCoordinator(DataUpdateCoordinator[RainbirdDeviceState]):
             device_info["connections"] = {(CONNECTION_NETWORK_MAC, mac_address)}
         return device_info
 
+    @override
     async def _async_update_data(self) -> RainbirdDeviceState:
         """Fetch data from Rain Bird device."""
         try:
@@ -170,7 +172,23 @@ class RainbirdScheduleUpdateCoordinator(DataUpdateCoordinator[Schedule]):
         )
         self._controller = controller
         self._device_lock = device_lock
+        self._load_started = False
 
+    @callback
+    def async_load(self) -> None:
+        """Load the schedule in the background once an entity needs it.
+
+        The schedule takes a request per program and zone, so it is only
+        loaded once, however many entities are enabled.
+        """
+        if self._load_started:
+            return
+        self._load_started = True
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_refresh(), "rainbird.schedule-refresh"
+        )
+
+    @override
     async def _async_update_data(self) -> Schedule:
         """Fetch data from Rain Bird device."""
         try:

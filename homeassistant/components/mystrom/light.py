@@ -1,7 +1,7 @@
 """Support for myStrom Wifi bulbs."""
 
 import logging
-from typing import Any
+from typing import Any, override
 
 from pymystrom.exceptions import MyStromConnectionError
 
@@ -14,6 +14,7 @@ from homeassistant.components.light import (
     LightEntityFeature,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -63,6 +64,7 @@ class MyStromLight(LightEntity):
             sw_version=self._bulb.firmware,
         )
 
+    @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the light."""
         brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
@@ -90,17 +92,22 @@ class MyStromLight(LightEntity):
                 await self._bulb.set_sunrise(30)
             if effect == EFFECT_RAINBOW:
                 await self._bulb.set_rainbow(30)
-        # pylint: disable-next=home-assistant-action-swallowed-exception
-        except MyStromConnectionError:
-            _LOGGER.warning("No route to myStrom bulb")
+        except MyStromConnectionError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="light_action_failed",
+            ) from err
 
+    @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the bulb."""
         try:
             await self._bulb.set_off()
-        # pylint: disable-next=home-assistant-action-swallowed-exception
-        except MyStromConnectionError:
-            _LOGGER.warning("The myStrom bulb not online")
+        except MyStromConnectionError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="light_action_failed",
+            ) from err
 
     async def async_update(self) -> None:
         """Fetch new state data for this light."""
